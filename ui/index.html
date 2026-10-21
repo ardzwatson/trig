@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camtrack</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--tx:#e8eaf0;--mut:#8b93a5;--ac:#4da3ff;--ok:#3ddc84;--bad:#ff5d5d}
+@media(prefers-color-scheme:light){:root{--bg:#f3f4f7;--card:#fff;--line:#dcdfe6;--tx:#14171f;--mut:#5d6578}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:860px){main{grid-template-columns:1.4fr 1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px}
+.stage{position:relative;background:#000;border-radius:8px;overflow:hidden;line-height:0}
+.stage img{width:100%;display:block;cursor:crosshair;user-select:none;-webkit-user-drag:none}
+#zone{position:absolute;border:2px dashed #ffc800;pointer-events:none}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
+input[type=range]{width:100%}input[type=text],input[type=number],input[type=password]{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
+button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--tx);cursor:pointer}
+button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.pill{padding:3px 10px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.sw{width:34px;height:34px;border-radius:8px;border:1px solid var(--line)}
+.ev{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.ev img{width:84px;border-radius:6px}
+.hint{font-size:12px;color:var(--mut);margin:6px 0 0}
+</style></head><body><main>
+<section class="card">
+  <div class="row" style="justify-content:space-between"><h1>Camtrack</h1>
+    <span><span id="conn" class="pill">…</span> <span id="match" class="pill">no match</span></span></div>
+  <div class="stage"><img id="vid" src="/stream.mjpg" alt="live"><div id="zone" hidden></div></div>
+  <div class="row">
+    <button id="mPick" class="on">Click video: pick colour</button>
+    <button id="mZone">Drag video: set zone</button>
+    <button id="clrZone">Clear zone</button>
+    <button id="view">View: live</button>
+  </div>
+  <p class="hint" id="stat"></p>
+  <h2 style="margin-top:14px">Recent sightings</h2><div id="events"></div>
+</section>
+<section class="card">
+  <h2>Target</h2>
+  <div class="row"><div class="sw" id="sw"></div><input type="text" id="label" placeholder="Label, e.g. Red jacket"></div>
+  <label>Hue tolerance <b id="v_hue_tol"></b></label><input type="range" id="hue_tol" min="2" max="40">
+  <label>Min saturation <b id="v_sat_min"></b></label><input type="range" id="sat_min" min="0" max="255">
+  <label>Min brightness <b id="v_val_min"></b></label><input type="range" id="val_min" min="0" max="255">
+  <label>Min size (% of frame) <b id="v_min_area_pct"></b></label><input type="range" id="min_area_pct" min="0.1" max="30" step="0.1">
+  <p class="hint">Tip: switch to Mask view – the target should be white and everything else black.</p>
+  <h2 style="margin-top:18px">Alerts</h2>
+  <div class="row"><label style="margin:0"><input type="checkbox" id="enabled"> Tracking on</label></div>
+  <label>Confirm frames <b id="v_confirm_frames"></b></label><input type="range" id="confirm_frames" min="1" max="15">
+  <label>Cooldown (seconds) <b id="v_cooldown_s"></b></label><input type="range" id="cooldown_s" min="5" max="900" step="5">
+  <label>ntfy topic (install the ntfy app and subscribe to it)</label><input type="text" id="ntfy_topic" placeholder="long-random-topic-name">
+  <div class="row"><button id="test">Send test notification</button><span id="testres" class="hint"></span></div>
+  <h2 style="margin-top:18px">Camera</h2>
+  <label>Stream URL</label><input type="text" id="source" placeholder="rtsp://admin:CODE@192.168.x.x:554/h264/ch1/main/av_stream">
+  <div class="row"><button id="saveSrc">Save &amp; reconnect</button></div>
+</section></main>
+<script>
+const $=id=>document.getElementById(id);let cfg={},mode='pick';
+const q=new URLSearchParams(location.search);const tk=q.get('token');
+const url=p=>tk?p+(p.includes('?')?'&':'?')+'token='+tk:p;
+$('vid').src=url('/stream.mjpg');
+const api=async(p,b)=>(await fetch(url(p),b?{method:'POST',body:JSON.stringify(b)}:{})).json();
+const sliders=['hue_tol','sat_min','val_min','min_area_pct','confirm_frames','cooldown_s'];
+let t;const save=p=>{clearTimeout(t);t=setTimeout(()=>api('/api/config',p),200)};
+sliders.forEach(k=>$(k).oninput=e=>{$('v_'+k).textContent=e.target.value;cfg[k]=+e.target.value;save({[k]:+e.target.value})});
+$('label').onchange=e=>save({label:e.target.value});
+$('ntfy_topic').onchange=e=>save({ntfy_topic:e.target.value.trim()});
+$('enabled').onchange=e=>save({enabled:e.target.checked});
+$('saveSrc').onclick=()=>api('/api/config',{source:$('source').value.trim()});
+$('view').onclick=()=>{const v=cfg.view==='live'?'mask':'live';api('/api/config',{view:v})};
+$('mPick').onclick=()=>setMode('pick');$('mZone').onclick=()=>setMode('zone');
+$('clrZone').onclick=()=>{api('/api/config',{roi:null});$('zone').hidden=true};
+function setMode(m){mode=m;$('mPick').classList.toggle('on',m=='pick');$('mZone').classList.toggle('on',m=='zone')}
+$('test').onclick=async()=>{$('testres').textContent='…';const r=await api('/api/test-notify',{});$('testres').textContent=r.ok?'Sent ✓':'Failed: '+r.info};
+// pointer handling on video
+const img=$('vid');let start=null;
+const rel=e=>{const r=img.getBoundingClientRect();return{x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))}};
+img.onpointerdown=e=>{e.preventDefault();start=rel(e);img.setPointerCapture(e.pointerId)};
+img.onpointermove=e=>{if(mode!=='zone'||!start)return;drawZone(box(start,rel(e)))};
+img.onpointerup=async e=>{if(!start)return;const end=rel(e),b=box(start,end);const s=start;start=null;
+  if(mode==='pick'){const r=await api('/api/pick',{x:s.x,y:s.y});if(r.config){cfg=r.config;render()}}
+  else if(b[2]>.03&&b[3]>.03){drawZone(b);api('/api/config',{roi:b})}};
+const box=(a,b)=>[Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y)];
+function drawZone(b){const z=$('zone');if(!b){z.hidden=true;return}z.hidden=false;Object.assign(z.style,{left:b[0]*100+'%',top:b[1]*100+'%',width:b[2]*100+'%',height:b[3]*100+'%'})}
+function render(){
+  sliders.forEach(k=>{$(k).value=cfg[k];$('v_'+k).textContent=cfg[k]});
+  $('label').value=cfg.label;$('ntfy_topic').value=cfg.ntfy_topic;$('enabled').checked=cfg.enabled;
+  if(document.activeElement!==$('source'))$('source').value=cfg.source;
+  $('sw').style.background=`hsl(${cfg.hue*2},${Math.min(100,cfg.sat_min/2.55+20)}%,50%)`;
+  $('view').textContent='View: '+cfg.view;drawZone(cfg.roi);
+}
+async function poll(){try{const s=await api('/api/state');cfg=s.config;
+  if(!window._init||document.activeElement.tagName!=='INPUT'){render();window._init=1}
+  const st=s.status;$('conn').textContent=st.connected?'camera online':'offline';$('conn').className='pill '+(st.connected?'ok':'bad');
+  $('match').textContent=st.match?`MATCH ${st.area_pct}%`:'no match';$('match').className='pill '+(st.match?'ok':'');
+  $('stat').textContent=st.last_error||`${st.fps} fps · largest blob ${st.area_pct}%`;
+  $('events').innerHTML=s.events.slice(0,8).map(e=>`<div class="ev"><a href="${url('/events/'+e.file)}" target="_blank"><img src="${url('/events/'+e.file)}"></a><div>${e.t}<br><span class="${e.notified?'ok':'bad'}">${e.notified?'notified':'not sent: '+e.info}</span></div></div>`).join('')||'<p class="hint">Nothing yet.</p>';
+}catch(e){}setTimeout(poll,1000)}
+poll();
+</script></body></html>
