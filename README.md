@@ -32,3 +32,12 @@ Colour matching, not identity: anything else in that colour (curtains, a car) ma
 
 ## Running off the Mac
 See "Hosting" notes in the chat/PR. `Dockerfile` is provided; the camera must be reachable from wherever this runs, via a VPN tunnel, never an open RTSP port.
+
+## EZVIZ cloud mode (no LAN access needed)
+Set the stream URL to `ezviz://<camera serial>` (serial is on the label / in the EZVIZ app). The tracker then polls your EZVIZ account for the camera's **alarm pictures** (unofficial `pyezviz` API) and runs person/colour matching on each one. Alerts arrive ~poll interval after the camera's own motion alarm, not in real time.
+
+    export EZVIZ_ACCOUNT=you@example.com EZVIZ_PASSWORD=...   # secrets: env vars only, never in config/UI
+    export EZVIZ_URL=apiieu.ezvizlife.com                     # your region's API host (default: Europe)
+    python3 -m camtrack.ezviz_login                            # once, handles the MFA code and caches the token
+
+Requirements in the EZVIZ app: motion detection / alarm notifications ON for the camera, and **Image Encryption OFF** (encrypted pictures can't be decoded). Existing alarms are ignored at startup; only new ones trigger alerts. The `ezviz_poll_s` setting controls polling (default 20 s). Unofficial API: EZVIZ may change it without notice.

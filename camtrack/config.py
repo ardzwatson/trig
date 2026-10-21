@@ -7,6 +7,7 @@ DEFAULTS = {
     "confirm_frames": 3,          # consecutive hits before alerting (kills flicker)
     "cooldown_s": 60,             # min seconds between notifications
     "process_fps": 4,
+    "ezviz_poll_s": 20,           # cloud mode (source = ezviz://<camera serial>): how often to check for new alarm pictures
     "roi": None,                  # [x, y, w, h] normalised
     "require_person": False,       # only alert when the colour is on a detected person
     "person_conf": 0.45,
