@@ -1,6 +1,6 @@
 import os, threading, time, json, collections
 import cv2
-from . import detector, notify
+from . import detector, notify, person
 
 
 class Tracker:
@@ -14,6 +14,10 @@ class Tracker:
         self.events = collections.deque(maxlen=50)
         self._load_events()
         self.hits, self.last_alert = 0, 0.0
+        self.model_path = os.path.join(os.path.dirname(events_dir), "models", "person.onnx")
+        self.persons = person.PersonDetector(self.model_path) if os.path.exists(self.model_path) else None
+        self.refs = person.References(os.path.join(os.path.dirname(events_dir), "references"))
+        self.status["person_model"] = self.persons is not None
         self._src = None
         threading.Thread(target=self._grab, daemon=True).start()
         threading.Thread(target=self._process, daemon=True).start()
@@ -68,6 +72,8 @@ class Tracker:
                 s = 540 / h
                 frame = cv2.resize(frame, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
             mask, boxes, best = detector.detect(frame, c)
+            if c["require_person"] and (self.persons or self.refs.count):
+                boxes, best = self._person_match(frame, mask, c)
             match = bool(boxes) and c["enabled"]
             self.hits = self.hits + 1 if match else 0
             now = time.time()
@@ -83,6 +89,25 @@ class Tracker:
             if self.hits >= c["confirm_frames"] and now - self.last_alert >= c["cooldown_s"]:
                 self.last_alert = now
                 self._alert(frame, boxes, best, c)
+
+    def _person_match(self, frame, mask, c):
+        """Keep only people whose torso matches the reference photos (or the picked colour)."""
+        if not self.persons:
+            self.status["last_error"] = "require_person is on but models/person.onnx is missing"
+            return [], 0.0
+        hits, best = [], 0.0
+        for b in self.persons(frame, c["person_conf"]):
+            x, y, w, h = b[:4]
+            if self.refs.count:
+                score = person.similarity(person.hist(person.torso(frame, b)), self.refs.hist)
+                ok, pct = score >= c["ref_threshold"], score * 100
+            else:
+                t = person.torso(mask[:, :, None], b)
+                pct = 100.0 * cv2.countNonZero(t) / max(1, t.size)
+                ok = pct >= c["torso_cover_pct"]
+            if ok:
+                hits.append((x, y, w, h)); best = max(best, pct)
+        return hits, best
 
     def _draw(self, vis, boxes, c):
         H, W = vis.shape[:2]

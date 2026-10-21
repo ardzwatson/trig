@@ -25,3 +25,10 @@ Install the **ntfy** app (Android/iOS), subscribe to a long random topic, and pu
 
 ## Limits
 Colour matching, not identity: anything else in that colour (curtains, a car) matches too. Use the zone, min size and saturation to cut false positives. IR night mode removes colour, so expect daytime-only reliability.
+
+## Person detection + reference photos
+1. `./scripts/get_model.sh` creates `models/person.onnx` (YOLOv8n, runs on CPU).
+2. In the UI tick **Only when worn by a person** and upload photos of the garment. Each person's torso is compared to the photos' colour pattern; raise **Match strictness** to cut false positives. This is appearance matching, not trained.
+
+## Running off the Mac
+See "Hosting" notes in the chat/PR. `Dockerfile` is provided; the camera must be reachable from wherever this runs, via a VPN tunnel, never an open RTSP port.

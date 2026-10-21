@@ -46,6 +46,12 @@ button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
   <label>Min brightness <b id="v_val_min"></b></label><input type="range" id="val_min" min="0" max="255">
   <label>Min size (% of frame) <b id="v_min_area_pct"></b></label><input type="range" id="min_area_pct" min="0.1" max="30" step="0.1">
   <p class="hint">Tip: switch to Mask view – the target should be white and everything else black.</p>
+  <h2 style="margin-top:18px">People &amp; reference photos</h2>
+  <div class="row"><label style="margin:0"><input type="checkbox" id="require_person"> Only when worn by a person</label></div>
+  <p class="hint" id="pm"></p>
+  <div class="row"><input type="file" id="file" accept="image/*" multiple><button id="clrRef">Clear photos</button></div>
+  <p class="hint">Upload photos of the jacket/top (fill most of the frame). <span id="refs">0</span> loaded. Matched by colour pattern, no training needed. Without photos the picked colour is used.</p>
+  <label>Match strictness <b id="v_ref_threshold"></b></label><input type="range" id="ref_threshold" min="0.1" max="0.95" step="0.05">
   <h2 style="margin-top:18px">Alerts</h2>
   <div class="row"><label style="margin:0"><input type="checkbox" id="enabled"> Tracking on</label></div>
   <label>Confirm frames <b id="v_confirm_frames"></b></label><input type="range" id="confirm_frames" min="1" max="15">
@@ -62,11 +68,14 @@ const q=new URLSearchParams(location.search);const tk=q.get('token');
 const url=p=>tk?p+(p.includes('?')?'&':'?')+'token='+tk:p;
 $('vid').src=url('/stream.mjpg');
 const api=async(p,b)=>(await fetch(url(p),b?{method:'POST',body:JSON.stringify(b)}:{})).json();
-const sliders=['hue_tol','sat_min','val_min','min_area_pct','confirm_frames','cooldown_s'];
+const sliders=['ref_threshold','hue_tol','sat_min','val_min','min_area_pct','confirm_frames','cooldown_s'];
 let t;const save=p=>{clearTimeout(t);t=setTimeout(()=>api('/api/config',p),200)};
 sliders.forEach(k=>$(k).oninput=e=>{$('v_'+k).textContent=e.target.value;cfg[k]=+e.target.value;save({[k]:+e.target.value})});
 $('label').onchange=e=>save({label:e.target.value});
 $('ntfy_topic').onchange=e=>save({ntfy_topic:e.target.value.trim()});
+$('require_person').onchange=e=>save({require_person:e.target.checked});
+$('file').onchange=async e=>{for(const f of e.target.files)await fetch(url('/api/reference'),{method:'POST',body:f});e.target.value=''};
+$('clrRef').onclick=()=>api('/api/reference/clear',{});
 $('enabled').onchange=e=>save({enabled:e.target.checked});
 $('saveSrc').onclick=()=>api('/api/config',{source:$('source').value.trim()});
 $('view').onclick=()=>{const v=cfg.view==='live'?'mask':'live';api('/api/config',{view:v})};
@@ -86,14 +95,14 @@ const box=(a,b)=>[Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs
 function drawZone(b){const z=$('zone');if(!b){z.hidden=true;return}z.hidden=false;Object.assign(z.style,{left:b[0]*100+'%',top:b[1]*100+'%',width:b[2]*100+'%',height:b[3]*100+'%'})}
 function render(){
   sliders.forEach(k=>{$(k).value=cfg[k];$('v_'+k).textContent=cfg[k]});
-  $('label').value=cfg.label;$('ntfy_topic').value=cfg.ntfy_topic;$('enabled').checked=cfg.enabled;
+  $('label').value=cfg.label;$('ntfy_topic').value=cfg.ntfy_topic;$('enabled').checked=cfg.enabled;$('require_person').checked=cfg.require_person;
   if(document.activeElement!==$('source'))$('source').value=cfg.source;
   $('sw').style.background=`hsl(${cfg.hue*2},${Math.min(100,cfg.sat_min/2.55+20)}%,50%)`;
   $('view').textContent='View: '+cfg.view;drawZone(cfg.roi);
 }
 async function poll(){try{const s=await api('/api/state');cfg=s.config;
   if(!window._init||document.activeElement.tagName!=='INPUT'){render();window._init=1}
-  const st=s.status;$('conn').textContent=st.connected?'camera online':'offline';$('conn').className='pill '+(st.connected?'ok':'bad');
+  const st=s.status;$('refs').textContent=s.refs;$('pm').textContent=st.person_model?'Person model loaded ✓':'Person model missing: put YOLOv8n ONNX at models/person.onnx';$('conn').textContent=st.connected?'camera online':'offline';$('conn').className='pill '+(st.connected?'ok':'bad');
   $('match').textContent=st.match?`MATCH ${st.area_pct}%`:'no match';$('match').className='pill '+(st.match?'ok':'');
   $('stat').textContent=st.last_error||`${st.fps} fps · largest blob ${st.area_pct}%`;
   $('events').innerHTML=s.events.slice(0,8).map(e=>`<div class="ev"><a href="${url('/events/'+e.file)}" target="_blank"><img src="${url('/events/'+e.file)}"></a><div>${e.t}<br><span class="${e.notified?'ok':'bad'}">${e.notified?'notified':'not sent: '+e.info}</span></div></div>`).join('')||'<p class="hint">Nothing yet.</p>';

@@ -41,7 +41,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/":
             return self._send(200, open(os.path.join(ROOT, "ui", "index.html"), "rb").read(), "text/html", extra)
         if u.path == "/api/state":
-            return self._send(200, {"config": CFG.public(), "status": TRK.status, "events": list(TRK.events)[::-1]})
+            return self._send(200, {"config": CFG.public(), "status": TRK.status, "events": list(TRK.events)[::-1], "refs": TRK.refs.count})
         if u.path == "/stream.mjpg":
             return self._stream()
         if u.path.startswith("/events/"):
@@ -71,7 +71,8 @@ class H(BaseHTTPRequestHandler):
         if not self._authed(q):
             return self._send(401, {"error": "token required"})
         n = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(n) or b"{}")
+        self._raw = self.rfile.read(n)
+        body = json.loads(self._raw or b"{}") if u.path != "/api/reference" else {}
         if u.path == "/api/config":
             if "***" in str(body.get("source", "")):
                 body.pop("source")      # UI echoed the masked URL – keep the stored one
@@ -84,6 +85,15 @@ class H(BaseHTTPRequestHandler):
             h, s, v = detector.sample_hsv(f, body["x"], body["y"])
             CFG.update({"hue": h, "sat_min": max(40, int(s * 0.5)), "val_min": max(40, int(v * 0.4))})
             return self._send(200, {"config": CFG.public(), "picked": [h, s, v]})
+        if u.path == "/api/reference":   # raw image bytes in body
+            try:
+                TRK.refs.add(self._raw)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"count": TRK.refs.count})
+        if u.path == "/api/reference/clear":
+            TRK.refs.clear()
+            return self._send(200, {"count": 0})
         if u.path == "/api/test-notify":
             ok, info = notify.send(CFG.snapshot(), "Test from camtrack", "If you can read this, notifications work.")
             return self._send(200, {"ok": ok, "info": info})

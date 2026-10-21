@@ -8,6 +8,10 @@ DEFAULTS = {
     "cooldown_s": 60,             # min seconds between notifications
     "process_fps": 4,
     "roi": None,                  # [x, y, w, h] normalised
+    "require_person": False,       # only alert when the colour is on a detected person
+    "person_conf": 0.45,
+    "ref_threshold": 0.45,        # reference-photo similarity needed (0..1)
+    "torso_cover_pct": 25,        # no reference photos: % of torso that must match the colour
     "enabled": True,              # tracking on/off
     "view": "live",               # live | mask
     "ntfy_server": "https://ntfy.sh",
